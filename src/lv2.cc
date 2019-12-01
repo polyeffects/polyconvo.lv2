@@ -20,10 +20,13 @@
 #include <assert.h>
 #include <stdexcept>
 #include <stdlib.h>
+#include <math.h>
 
 #include "convolver.h"
 
 #include "lv2/lv2plug.in/ns/ext/atom/atom.h"
+#include "lv2/lv2plug.in/ns/ext/atom/util.h"
+#include "lv2/lv2plug.in/ns/ext/patch/patch.h"
 #include "lv2/lv2plug.in/ns/ext/urid/urid.h"
 #include <lv2/lv2plug.in/ns/ext/buf-size/buf-size.h>
 #include <lv2/lv2plug.in/ns/ext/log/log.h>
@@ -33,7 +36,7 @@
 #include <lv2/lv2plug.in/ns/ext/worker/worker.h>
 #include <lv2/lv2plug.in/ns/lv2core/lv2.h>
 
-#define ZC_PREFIX "http://gareus.org/oss/lv2/zeroconvolv#"
+#define ZC_PREFIX "http://polyeffects.com/lv2/polyconvo#"
 
 #define ZC_ir        ZC_PREFIX "ir"
 #define ZC_gain      ZC_PREFIX "gain"
@@ -61,6 +64,10 @@ typedef struct {
 	float const* input[2];
 	float*       output[2];
 	float*       p_latency;
+    const LV2_Atom_Sequence* control_port;
+
+    float * p_output_gain;
+    float output_gain_db, output_gain_target, output_gain;
 
 	LV2_URID atom_String;
 	LV2_URID atom_Path;
@@ -68,6 +75,7 @@ typedef struct {
 	LV2_URID atom_Float;
 	LV2_URID atom_Bool;
 	LV2_URID atom_Vector;
+	LV2_URID atom_URID;
 	LV2_URID zc_chn_delay;
 	LV2_URID zc_predelay;
 	LV2_URID zc_chn_gain;
@@ -75,6 +83,10 @@ typedef struct {
 	LV2_URID zc_sum_ins;
 	LV2_URID zc_ir;
 	LV2_URID bufsz_len;
+
+	LV2_URID patch_Set;
+	LV2_URID patch_property;
+	LV2_URID patch_value;
 
 	ZeroConvoLV2::Convolver* clv_online;  ///< currently active engine
 	ZeroConvoLV2::Convolver* clv_offline; ///< inactive engine being configured
@@ -99,6 +111,51 @@ typedef struct {
 	};
 } stateVector;
 
+
+/**
+ * Get the file path from a message like:
+ * []
+ *     a patch:Set ;
+ *     patch:property convolv2:impulse ;
+ *     patch:value </home/me/foo.wav> .
+ */
+static inline const LV2_Atom*
+read_set_file(LV2_Handle instance,
+              const LV2_Atom_Object* obj)
+{
+	zeroConvolv* self = (zeroConvolv*)instance;
+	if (obj->body.otype != self->patch_Set) {
+		fprintf(stderr, "Ignoring unknown message type %d\n", obj->body.otype);
+		return NULL;
+	}
+
+	/* Get property URI. */
+	const LV2_Atom* property = NULL;
+	lv2_atom_object_get(obj, self->patch_property, &property, 0);
+	if (!property) {
+		fprintf(stderr, "Malformed set message has no body.\n");
+		return NULL;
+	} else if (property->type != self->atom_URID) {
+		fprintf(stderr, "Malformed set message has non-URID property.\n");
+		return NULL;
+	} else if (((LV2_Atom_URID*)property)->body != self->zc_ir) {
+		fprintf(stderr, "Set message for unknown property.\n");
+		return NULL;
+	}
+
+	/* Get value. */
+	const LV2_Atom* file_path = NULL;
+	lv2_atom_object_get(obj, self->patch_value, &file_path, 0);
+	if (!file_path) {
+		fprintf(stderr, "Malformed set message has no value.\n");
+		return NULL;
+	} else if (file_path->type != self->atom_Path) {
+		fprintf(stderr, "Set message value is not a Path.\n");
+		return NULL;
+	}
+
+	return file_path;
+}
 
 static LV2_Handle
 instantiate (const LV2_Descriptor*     descriptor,
@@ -248,6 +305,7 @@ instantiate (const LV2_Descriptor*     descriptor,
 	self->atom_Float   = map->map (map->handle, LV2_ATOM__Float);
 	self->atom_Bool    = map->map (map->handle, LV2_ATOM__Bool);
 	self->atom_Vector  = map->map (map->handle, LV2_ATOM__Vector);
+	self->atom_URID    = map->map (map->handle, LV2_ATOM__URID);
 	self->zc_chn_delay = map->map (map->handle, ZC_chn_delay);
 	self->zc_predelay  = map->map (map->handle, ZC_predelay);
 	self->zc_chn_gain  = map->map (map->handle, ZC_chn_gain);
@@ -255,6 +313,12 @@ instantiate (const LV2_Descriptor*     descriptor,
 	self->zc_sum_ins   = map->map (map->handle, ZC_sum_ins);
 	self->zc_ir        = map->map (map->handle, ZC_ir);
 	self->bufsz_len    = map->map (map->handle, LV2_BUF_SIZE__nominalBlockLength);
+	self->patch_Set          = map->map(map->handle, LV2_PATCH__Set);
+	self->patch_property     = map->map(map->handle, LV2_PATCH__property);
+	self->patch_value        = map->map(map->handle, LV2_PATCH__value);
+
+    self->output_gain_db = 0;
+    self->output_gain_target = self->output_gain = 1.0;
 
 	return (LV2_Handle)self;
 }
@@ -268,20 +332,27 @@ connect_port (LV2_Handle instance,
 
 	switch (port) {
 		case 0:
-			self->p_latency = (float*)data;
+            self->control_port = (const LV2_Atom_Sequence*)data;
 			break;
-		case 1:
+        case 1:
+			self->p_output_gain = (float*)data;
+            break;
+        case 2:
+			self->p_latency = (float*)data;
+            break;
+		case 3:
 			self->output[0] = (float*)data;
 			break;
-		case 3:
+		case 4:
 			self->output[1] = (float*)data;
 			break;
-		case 2:
+		case 5:
 			self->input[0] = (const float*)data;
 			break;
-		case 4:
+		case 6:
 			self->input[1] = (const float*)data;
 			break;
+
 		default:
 			break;
 	}
@@ -310,6 +381,16 @@ run (LV2_Handle instance, uint32_t n_samples)
 {
 	zeroConvolv* self = (zeroConvolv*)instance;
 
+    if (self->control_port) {
+        /* Read incoming events */
+        /* lv2_log_note (&self->logger, "reading control port messages:\n"); */
+        LV2_ATOM_SEQUENCE_FOREACH(self->control_port, ev) {
+            /* lv2_log_note (&self->logger, "reading control port messages in loop:\n"); */
+            // TODO: parse message here and set self->flag_reinit_in_progres=1; IFF an apply would be triggered
+            self->schedule->schedule_work(self->schedule->handle, lv2_atom_total_size(&ev->body), &ev->body);
+        }
+    }
+
 	if (!self->clv_online) {
 		*self->p_latency = 0;
 		for (int i = 0; i < self->chn_out; i++) {
@@ -317,6 +398,16 @@ run (LV2_Handle instance, uint32_t n_samples)
 		}
 		return;
 	}
+
+    if (*self->p_output_gain != self->output_gain_db) {
+        float g = *self->p_output_gain;
+        self->output_gain_db = *self->p_output_gain;
+        if (g < -40) g = -40;
+        if (g >  40) g =  40;
+        self->output_gain_target = powf(10.f, 0.05f * g);
+    }
+
+    self->output_gain += .08f * (self->output_gain_target - self->output_gain);
 
 	assert (self->clv_online->ready ());
 	*self->p_latency = self->clv_online->latency ();
@@ -334,15 +425,17 @@ run (LV2_Handle instance, uint32_t n_samples)
 		} else {
 			copy_no_inplace_buffers (self->output[1], self->input[1], n_samples);
 		}
-		self->clv_online->run_stereo (self->output[0], self->output[1], n_samples);
+		self->clv_online->run_stereo (self->output[0], self->output[1], n_samples, self->output_gain);
 	} else if (self->chn_out == 2) {
 		assert (self->chn_in == 1);
-		self->clv_online->run_stereo (self->output[0], self->output[1], n_samples);
+		self->clv_online->run_stereo (self->output[0], self->output[1], n_samples, self->output_gain);
 	} else {
 		assert (self->chn_in == 1);
 		assert (self->chn_out == 1);
-		self->clv_online->run (self->output[0], n_samples);
+		self->clv_online->run (self->output[0], n_samples, self->output_gain);
 	}
+
+
 }
 
 static void
@@ -386,23 +479,64 @@ work (LV2_Handle                  instance,
       const void*                 data)
 {
 	zeroConvolv* self = (zeroConvolv*)instance;
+    int apply = 0;
 
-	if (size != sizeof (int)) {
-		return LV2_WORKER_ERR_UNKNOWN;
-	}
+	if (size == sizeof (int)) {
+        switch (*((const int*)data)) {
+            case CMD_APPLY:
+                apply = 1;
+                break;
+            case CMD_FREE:
+                delete self->clv_offline;
+                self->clv_offline = 0;
+                break;
+            default:
+                break;
+        }
+    } else {
+        /* handle message described in Atom */
+        const LV2_Atom_Object* obj = (const LV2_Atom_Object*) data;
+        /* lv2_log_note (&self->logger, "in Work:\n"); */
 
-	switch (*((const int*)data)) {
-		case CMD_APPLY:
-			respond (handle, 1, "");
-			break;
-		case CMD_FREE:
-			delete self->clv_offline;
-			self->clv_offline = 0;
-			break;
-		default:
-			break;
-	}
-	return LV2_WORKER_SUCCESS;
+        if (obj->body.otype == self->patch_Set) {
+            /* lv2_log_note (&self->logger, "Work: Atom Patch\n"); */
+            const LV2_Atom* file_path = read_set_file(instance, obj);
+            if (file_path) {
+                const char *path = (const char*)(file_path+1);
+                /* DEBUG_printf("load IR %s\n", path); */
+                bool ok = false;
+                ZeroConvoLV2::Convolver::IRSettings irs;
+
+                /* char* path = map_path->absolute_path (map_path->handle, (const char*)value); */
+                lv2_log_note (&self->logger, "ZConvolv State: ir=%s\n", path);
+                try {
+                    self->clv_offline = new ZeroConvoLV2::Convolver (path, self->rate, self->rt_policy, self->rt_priority, self->chn_cfg, irs);
+                    self->clv_offline->reconfigure (self->block_size);
+                    ok = self->clv_offline->ready ();
+                } catch (std::runtime_error& err) {
+                    lv2_log_warning (&self->logger, "ZConvolv Convolver: %s.\n", err.what ());
+                }
+
+                if (!ok) {
+                    //lv2_log_note (&self->logger, "ZConvolv State: configuration failed.\n");
+                    delete self->clv_offline;
+                    self->clv_offline = 0;
+                    return LV2_WORKER_ERR_UNKNOWN;
+                } else {
+                    int d = CMD_APPLY;
+                    self->schedule->schedule_work (self->schedule->handle, sizeof (int), &d);
+                    return LV2_WORKER_SUCCESS;
+                }
+                apply = 1;
+            }
+        } else {
+            /* DEBUG_printf("Work: Invalid Atom Msg\n"); */
+        }
+    }
+    if (apply) {
+        respond (handle, 1, "");
+    }
+    return LV2_WORKER_SUCCESS;
 }
 
 static LV2_State_Status

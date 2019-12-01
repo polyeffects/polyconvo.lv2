@@ -1,8 +1,7 @@
-zeroconvo.lv2
+polyconvo.lv2
 =============
 
-zeroconvolv2 is a [LV2](http://lv2plug.in) plugin to convolve audio signals
-with zero configuration options: IRs are only available via presets.
+modified from zeroconvolv2 to allow patch file setting and gain control. It is a [LV2](http://lv2plug.in) plugin to convolve audio signals.
 
 Note that LV2 allows preset-bundles (many presets can be in a single bundle),
 and a plugin can also have many of those preset-bundles.
@@ -20,13 +19,13 @@ This plugin uses background processing and is suitable to process
 long impulse-responses. Configurations up to true-stereo (4 channels)
 are supported.
 
+Only tested in Ingen and jalv.
+
 Install
 -------
 
-Don't. The plugin is still work-in-progress.
 
 ```bash
 make
-#sudo make install PREFIX=/usr
-ln -s "$(pwd)/build" ~/.lv2/zeroconvo.lv2
+sudo make install PREFIX=/usr
 ```

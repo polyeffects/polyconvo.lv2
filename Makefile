@@ -12,8 +12,8 @@ conv_VERSION ?= $(shell (git describe --tags HEAD || echo "0") | sed 's/-g.*$$//
 ###############################################################################
 BUILDDIR=build/
 
-LV2NAME=zeroconvolv
-BUNDLE=zeroconvo.lv2
+LV2NAME=polyconvo
+BUNDLE=polyconvo.lv2
 
 targets =
 

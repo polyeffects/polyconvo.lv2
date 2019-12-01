@@ -103,7 +103,7 @@ Convolver::reconfigure (uint32_t block_size)
 
 	_offset    = 0;
 	_n_samples = block_size;
-	_max_size  = _readables[0]->readable_length ();
+	_max_size  = 0x00200000;
 
 	uint32_t power_of_two;
 	for (power_of_two = 1; 1U << power_of_two < _n_samples; ++power_of_two) ;
@@ -178,7 +178,7 @@ Convolver::reconfigure (uint32_t block_size)
 
 
 		Readable* r = _readables[ir_c];
-		assert (r->readable_length () == _max_size);
+		/* assert (r->readable_length () == _max_size); */
 		assert (r->n_channels () == 1);
 
 		const float    chan_gain  = _ir_settings.gain * _ir_settings.channel_gain[c];
@@ -260,7 +260,7 @@ Convolver::ready () const
 }
 
 void
-Convolver::run (float* buf, uint32_t n_samples)
+Convolver::run (float* buf, uint32_t n_samples, const float output_gain)
 {
 	assert (_convproc.state () == Convproc::ST_PROC);
 	assert (_irc == Mono);
@@ -286,10 +286,18 @@ Convolver::run (float* buf, uint32_t n_samples)
 			_offset = 0;
 		}
 	}
+
+	if (output_gain != 1.0) {
+		unsigned int s;
+		float const * const od = _convproc.outdata (/*channel*/ 0);
+		for (s = 0; s < n_samples; ++s) {
+			buf[s] = od[s] * output_gain;
+		}
+	}
 }
 
 void
-Convolver::run_stereo (float* left, float* right, uint32_t n_samples)
+Convolver::run_stereo (float* left, float* right, uint32_t n_samples, const float output_gain)
 {
 	assert (_convproc.state () == Convproc::ST_PROC);
 	assert (_irc != Mono);
@@ -314,6 +322,15 @@ Convolver::run_stereo (float* left, float* right, uint32_t n_samples)
 		if (_offset == _n_samples) {
 			_convproc.process (true);
 			_offset = 0;
+		}
+	}
+	if (output_gain != 1.0) {
+		unsigned int s;
+		float const * const odl = _convproc.outdata (/*channel*/ 0);
+		float const * const odr = _convproc.outdata (/*channel*/ 1);
+		for (s = 0; s < n_samples; ++s) {
+			left[s] = odl[s] * output_gain;
+			right[s] = odr[s] * output_gain;
 		}
 	}
 }

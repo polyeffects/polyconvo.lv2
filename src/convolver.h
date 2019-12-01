@@ -59,8 +59,8 @@ public:
 			IRSettings irs = IRSettings ());
 	~Convolver ();
 
-	void run (float*, uint32_t);
-	void run_stereo (float* L, float* R, uint32_t);
+	void run (float*, uint32_t, const float);
+	void run_stereo (float* L, float* R, uint32_t, const float);
 
 	void reconfigure (uint32_t);
 
