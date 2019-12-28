@@ -2,7 +2,9 @@
 PREFIX ?= /usr/local
 LV2DIR ?= $(PREFIX)/lib/lv2
 
-OPTIMIZATIONS ?= -msse -msse2 -mfpmath=sse -ffast-math -fomit-frame-pointer -O3 -fno-finite-math-only -DNDEBUG
+#OPTIMIZATIONS ?= -msse -msse2 -mfpmath=sse -ffast-math -fomit-frame-pointer -O3 -fno-finite-math-only -DNDEBUG
+OPTIMIZATIONS ?= -mtune=cortex-a53 -funsafe-math-optimizations -ffast-math -fomit-frame-pointer -O3 -fno-finite-math-only -fvisibility=hidden -fdata-sections -ffunction-sections  -DNDEBUG # -fopt-info-vec-optimized
+
 STATICZITA ?= yes
 CXXFLAGS ?= $(OPTIMIZATIONS) -Wall
 STRIP ?= strip

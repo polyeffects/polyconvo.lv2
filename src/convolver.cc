@@ -56,6 +56,10 @@ Convolver::Convolver (
 	}
 #endif
 
+#ifndef NDEBUG
+		printf ("Convolver::Convolver _path=%s n_samples=%d max_size=%d readable length %lu sample_rate %d \n", _path.c_str(), _n_samples, _max_size, _fs->readable_length(), sample_rate);
+#endif
+
 	if (_fs->readable_length () > 0x1000000 /*2^24*/) {
 		delete _fs;
 		_fs = 0;
@@ -103,7 +107,8 @@ Convolver::reconfigure (uint32_t block_size)
 
 	_offset    = 0;
 	_n_samples = block_size;
-	_max_size  = 0x00200000;
+	_max_size  = _readables[0]->readable_length ();
+	uint32_t conv_size_limit  = 0x00200000;
 
 	uint32_t power_of_two;
 	for (power_of_two = 1; 1U << power_of_two < _n_samples; ++power_of_two) ;
@@ -114,7 +119,8 @@ Convolver::reconfigure (uint32_t block_size)
 	int rv = _convproc.configure (
 	    /*in*/  n_inputs (),
 	    /*out*/ n_outputs (),
-	    /*max-convolution length */ _max_size,
+	    /*max-convolution length */  conv_size_limit,
+	    /*max-convolution length */ // _max_size,
 	    /*quantum, nominal-buffersize*/ _n_samples,
 	    /*Convproc::MINPART*/ _n_samples,
 	    /*Convproc::MAXPART*/ n_part
@@ -178,7 +184,7 @@ Convolver::reconfigure (uint32_t block_size)
 
 
 		Readable* r = _readables[ir_c];
-		/* assert (r->readable_length () == _max_size); */
+		assert (r->readable_length () == _max_size);
 		assert (r->n_channels () == 1);
 
 		const float    chan_gain  = _ir_settings.gain * _ir_settings.channel_gain[c];
@@ -205,6 +211,9 @@ Convolver::reconfigure (uint32_t block_size)
 			uint64_t ns      = r->read (ir, pos, to_read, 0);
 
 			if (ns == 0) {
+#ifndef NDEBUG
+				printf ("### pos %d _max_size %d to_read %lu \n", pos, _max_size, to_read);
+#endif
 				assert (pos == _max_size);
 				break;
 			}

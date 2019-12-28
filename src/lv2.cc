@@ -344,10 +344,10 @@ connect_port (LV2_Handle instance,
 			self->output[0] = (float*)data;
 			break;
 		case 4:
-			self->output[1] = (float*)data;
+			self->input[0] = (const float*)data;
 			break;
 		case 5:
-			self->input[0] = (const float*)data;
+			self->output[1] = (float*)data;
 			break;
 		case 6:
 			self->input[1] = (const float*)data;
@@ -507,8 +507,9 @@ work (LV2_Handle                  instance,
                 bool ok = false;
                 ZeroConvoLV2::Convolver::IRSettings irs;
 
-                /* char* path = map_path->absolute_path (map_path->handle, (const char*)value); */
                 lv2_log_note (&self->logger, "ZConvolv State: ir=%s\n", path);
+                /* char* path = map_path->absolute_path (map_path->handle, (const char*)value); */
+                /* lv2_log_note (&self->logger, "ZConvolv State: ir=%s\n", path); */
                 try {
                     self->clv_offline = new ZeroConvoLV2::Convolver (path, self->rate, self->rt_policy, self->rt_priority, self->chn_cfg, irs);
                     self->clv_offline->reconfigure (self->block_size);
