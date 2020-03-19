@@ -97,7 +97,7 @@ Convolver::~Convolver ()
 }
 
 void
-Convolver::reconfigure (uint32_t block_size)
+Convolver::reconfigure (uint32_t block_size, bool is_cab)
 {
 	_convproc.stop_process ();
 	_convproc.cleanup ();
@@ -108,13 +108,21 @@ Convolver::reconfigure (uint32_t block_size)
 	_offset    = 0;
 	_n_samples = block_size;
 	_max_size  = _readables[0]->readable_length ();
-	uint32_t conv_size_limit  = 0x00200000;
+	uint32_t conv_size_limit; 
+	int n_part;
+	if (is_cab) {
+		conv_size_limit = 2048;
+		n_part = block_size;
+	}
+	else {
+		conv_size_limit = 0x20000;
+		uint32_t power_of_two;
+		for (power_of_two = 1; 1U << power_of_two < _n_samples; ++power_of_two) ;
+		_n_samples = 1 << power_of_two;
 
-	uint32_t power_of_two;
-	for (power_of_two = 1; 1U << power_of_two < _n_samples; ++power_of_two) ;
-	_n_samples = 1 << power_of_two;
+		n_part = std::min ((uint32_t)Convproc::MAXPART, 4 * _n_samples);
+	}
 
-	int n_part = std::min ((uint32_t)Convproc::MAXPART, 4 * _n_samples);
 
 	int rv = _convproc.configure (
 	    /*in*/  n_inputs (),
@@ -296,13 +304,6 @@ Convolver::run (float* buf, uint32_t n_samples, const float output_gain)
 		}
 	}
 
-	if (output_gain != 1.0) {
-		unsigned int s;
-		float const * const od = _convproc.outdata (/*channel*/ 0);
-		for (s = 0; s < n_samples; ++s) {
-			buf[s] = od[s] * output_gain;
-		}
-	}
 }
 
 void
@@ -331,15 +332,6 @@ Convolver::run_stereo (float* left, float* right, uint32_t n_samples, const floa
 		if (_offset == _n_samples) {
 			_convproc.process (true);
 			_offset = 0;
-		}
-	}
-	if (output_gain != 1.0) {
-		unsigned int s;
-		float const * const odl = _convproc.outdata (/*channel*/ 0);
-		float const * const odr = _convproc.outdata (/*channel*/ 1);
-		for (s = 0; s < n_samples; ++s) {
-			left[s] = odl[s] * output_gain;
-			right[s] = odr[s] * output_gain;
 		}
 	}
 }

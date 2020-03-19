@@ -56,8 +56,8 @@ conv:Mono
 		lv2:symbol "gain" ;
 		lv2:name "Output Gain" ;
 		lv2:default 0.0 ;
-		lv2:minimum -24.0 ;
-		lv2:maximum 24.0;
+		lv2:minimum -40.0 ;
+		lv2:maximum 4.0;
 		units:unit units:db ;
 	] , [
 		a lv2:ControlPort, lv2:OutputPort;
@@ -108,8 +108,8 @@ conv:Stereo
 		lv2:symbol "gain" ;
 		lv2:name "Output Gain" ;
 		lv2:default 0.0 ;
-		lv2:minimum -24.0 ;
-		lv2:maximum 24.0;
+		lv2:minimum -40.0 ;
+		lv2:maximum 4.0;
 		units:unit units:db ;
 	] , [
 		a lv2:ControlPort, lv2:OutputPort;
@@ -175,7 +175,183 @@ conv:MonoToStereo
 		lv2:symbol "gain" ;
 		lv2:name "Output Gain" ;
 		lv2:default 0.0 ;
-		lv2:minimum -24.0 ;
+		lv2:minimum -40.0 ;
+		lv2:maximum 4.0;
+		units:unit units:db ;
+	] , [
+		a lv2:ControlPort, lv2:OutputPort;
+		lv2:index 2;
+		lv2:symbol "latency";
+		lv2:name "Signal Latency";
+		lv2:minimum 0;
+		lv2:maximum 8192;
+		lv2:portProperty lv2:reportsLatency, lv2:integer;
+		units:unit units:frame;
+	] , [
+		a lv2:AudioPort, lv2:OutputPort;
+		lv2:index 3;
+		lv2:symbol "out_1";
+		lv2:name "OutL";
+		lv2:designation pg:left
+	] , [
+		a lv2:AudioPort, lv2:InputPort;
+		lv2:index 4;
+		lv2:symbol "in";
+		lv2:name "In"
+	] , [
+		a lv2:AudioPort, lv2:OutputPort;
+		lv2:index 5;
+		lv2:symbol "out_2";
+		lv2:name "OutR";
+		lv2:designation pg:right
+	];
+	.
+conv:CabMono
+	a lv2:Plugin;
+	doap:name "Poly Convolver Cab Mono";
+	lv2:project <http://polyeffects.com/lv2/polyconvo> ;
+	doap:license <http://usefulinc.com/doap/licenses/gpl>;
+	@VERSION@
+	lv2:requiredFeature bufsz:boundedBlockLength, urid:map, opts:options, work:schedule;
+	lv2:extensionData work:interface, state:interface, opts:interface;
+	lv2:optionalFeature lv2:hardRTCapable, state:threadSafeRestore;
+	patch:writable conv:ir ;
+	lv2:port [
+		a atom:AtomPort ,
+			lv2:InputPort ;
+		atom:bufferType atom:Sequence ;
+		atom:supports patch:Message ;
+		lv2:designation lv2:control ;
+		lv2:index 0 ;
+		lv2:symbol "control" ;
+		lv2:name "Control"
+	] , [
+		a lv2:InputPort ,
+			lv2:ControlPort ;
+		lv2:index 1 ;
+		lv2:symbol "gain" ;
+		lv2:name "Output Gain" ;
+		lv2:default 0.0 ;
+		lv2:minimum -40.0 ;
+		lv2:maximum 24.0;
+		units:unit units:db ;
+	] , [
+		a lv2:ControlPort, lv2:OutputPort;
+		lv2:index 2;
+		lv2:symbol "latency";
+		lv2:name "Signal Latency";
+		lv2:minimum 0;
+		lv2:maximum 8192;
+		lv2:portProperty lv2:reportsLatency, lv2:integer;
+		units:unit units:frame;
+	] , [
+		a lv2:AudioPort, lv2:OutputPort;
+		lv2:index 3;
+		lv2:symbol "out";
+		lv2:name "Out"
+	] , [
+		a lv2:AudioPort, lv2:InputPort;
+		lv2:index 4;
+		lv2:symbol "in";
+		lv2:name "In"
+	];
+	.
+
+conv:CabStereo
+	a lv2:Plugin;
+	doap:name "Poly Convolver Cab Stereo";
+	doap:license <http://usefulinc.com/doap/licenses/gpl>;
+	lv2:project <http://polyeffects.com/lv2/polyconvo> ;
+	lv2:microVersion 0;
+	lv2:minorVersion 4;
+	lv2:requiredFeature bufsz:boundedBlockLength, urid:map, opts:options, work:schedule;
+	lv2:extensionData work:interface, state:interface, opts:interface;
+	lv2:optionalFeature lv2:hardRTCapable, state:threadSafeRestore;
+	patch:writable conv:ir ;
+	lv2:port [
+		a atom:AtomPort ,
+			lv2:InputPort ;
+		atom:bufferType atom:Sequence ;
+		atom:supports patch:Message ;
+		lv2:designation lv2:control ;
+		lv2:index 0 ;
+		lv2:symbol "control" ;
+		lv2:name "Control"
+	] , [
+		a lv2:InputPort ,
+			lv2:ControlPort ;
+		lv2:index 1 ;
+		lv2:symbol "gain" ;
+		lv2:name "Output Gain" ;
+		lv2:default 0.0 ;
+		lv2:minimum -40.0 ;
+		lv2:maximum 24.0;
+		units:unit units:db ;
+	] , [
+		a lv2:ControlPort, lv2:OutputPort;
+		lv2:index 2;
+		lv2:symbol "latency";
+		lv2:name "Signal Latency";
+		lv2:minimum 0;
+		lv2:maximum 8192;
+		lv2:portProperty lv2:reportsLatency, lv2:integer;
+		units:unit units:frame;
+	] , [
+		a lv2:AudioPort, lv2:OutputPort;
+		lv2:index 3;
+		lv2:symbol "out_1";
+		lv2:name "OutL";
+		lv2:designation pg:left
+	] , [
+		a lv2:AudioPort, lv2:InputPort;
+		lv2:index 4;
+		lv2:symbol "in_1";
+		lv2:name "InL";
+		lv2:designation pg:left
+	] , [
+		a lv2:AudioPort, lv2:OutputPort;
+		lv2:index 5;
+		lv2:symbol "out_2";
+		lv2:name "OutR";
+		lv2:designation pg:right
+	] , [
+		a lv2:AudioPort, lv2:InputPort;
+		lv2:index 6;
+		lv2:symbol "in_2";
+		lv2:name "InR";
+		lv2:designation pg:right
+	];
+	.
+
+conv:CabMonoToStereo
+	a lv2:Plugin;
+	doap:name "Poly Convolver Cab Mono => Stereo";
+	doap:license <http://usefulinc.com/doap/licenses/gpl>;
+	lv2:project <http://polyeffects.com/lv2/polyconvo> ;
+	lv2:microVersion 0;
+	lv2:minorVersion 4;
+	lv2:requiredFeature urid:map, opts:options, work:schedule;
+	lv2:requiredFeature bufsz:boundedBlockLength, urid:map, opts:options, work:schedule;
+	lv2:extensionData work:interface, state:interface, opts:interface;
+	lv2:optionalFeature lv2:hardRTCapable, state:threadSafeRestore;
+	patch:writable conv:ir;
+	lv2:port [
+		a atom:AtomPort ,
+			lv2:InputPort ;
+		atom:bufferType atom:Sequence ;
+		atom:supports patch:Message ;
+		lv2:designation lv2:control ;
+		lv2:index 0 ;
+		lv2:symbol "control" ;
+		lv2:name "Control"
+	] , [
+		a lv2:InputPort ,
+			lv2:ControlPort ;
+		lv2:index 1 ;
+		lv2:symbol "gain" ;
+		lv2:name "Output Gain" ;
+		lv2:default 0.0 ;
+		lv2:minimum -40.0 ;
 		lv2:maximum 24.0;
 		units:unit units:db ;
 	] , [

@@ -96,6 +96,7 @@ typedef struct {
 	int rate;    ///< sample-rate -- constant per instance
 	int chn_in;  ///< input channel count -- constant per instance
 	int chn_out; ///< output channel count --constant per instance
+	bool is_cab;
 
 	uint32_t block_size;
 	int      rt_policy;
@@ -272,14 +273,32 @@ instantiate (const LV2_Descriptor*     descriptor,
 		self->chn_in  = 1;
 		self->chn_out = 1;
 		self->chn_cfg = ZeroConvoLV2::Convolver::Mono;
+		self->is_cab = false;
 	} else if (!strcmp (descriptor->URI, ZC_PREFIX "Stereo")) {
 		self->chn_in  = 2;
 		self->chn_out = 2;
 		self->chn_cfg = ZeroConvoLV2::Convolver::Stereo;
+		self->is_cab = false;
 	} else if (!strcmp (descriptor->URI, ZC_PREFIX "MonoToStereo")) {
 		self->chn_in  = 1;
 		self->chn_out = 2;
 		self->chn_cfg = ZeroConvoLV2::Convolver::MonoToStereo;
+		self->is_cab = false;
+	} else if (!strcmp (descriptor->URI, ZC_PREFIX "CabMono")) {
+		self->chn_in  = 1;
+		self->chn_out = 1;
+		self->chn_cfg = ZeroConvoLV2::Convolver::Mono;
+		self->is_cab = true;
+	} else if (!strcmp (descriptor->URI, ZC_PREFIX "CabStereo")) {
+		self->chn_in  = 2;
+		self->chn_out = 2;
+		self->chn_cfg = ZeroConvoLV2::Convolver::Stereo;
+		self->is_cab = true;
+	} else if (!strcmp (descriptor->URI, ZC_PREFIX "CabMonoToStereo")) {
+		self->chn_in  = 1;
+		self->chn_out = 2;
+		self->chn_cfg = ZeroConvoLV2::Convolver::MonoToStereo;
+		self->is_cab = true;
 	} else {
 		lv2_log_error (&logger, "ZConvolv: Invalid URI\n");
 		free (self);
@@ -363,7 +382,7 @@ activate (LV2_Handle instance)
 {
 	zeroConvolv* self = (zeroConvolv*)instance;
 	if (self->clv_online) {
-		self->clv_online->reconfigure (self->block_size);
+		self->clv_online->reconfigure (self->block_size, self->is_cab);
 	}
 }
 
@@ -406,8 +425,8 @@ run (LV2_Handle instance, uint32_t n_samples)
         if (g >  40) g =  40;
         self->output_gain_target = powf(10.f, 0.05f * g);
     }
+	self->output_gain += .008f * (self->output_gain_target - self->output_gain);
 
-    self->output_gain += .08f * (self->output_gain_target - self->output_gain);
 
 	assert (self->clv_online->ready ());
 	*self->p_latency = self->clv_online->latency ();
@@ -426,13 +445,38 @@ run (LV2_Handle instance, uint32_t n_samples)
 			copy_no_inplace_buffers (self->output[1], self->input[1], n_samples);
 		}
 		self->clv_online->run_stereo (self->output[0], self->output[1], n_samples, self->output_gain);
+
+		if (self->output_gain != 1.0) {
+			unsigned int s;
+			for (s = 0; s < n_samples; ++s) {
+				self->output_gain += .008f * (self->output_gain_target - self->output_gain);
+				self->output[0][s] = self->output[0][s] * self->output_gain;
+				self->output[1][s] = self->output[1][s] * self->output_gain;
+			}
+		}
 	} else if (self->chn_out == 2) {
 		assert (self->chn_in == 1);
 		self->clv_online->run_stereo (self->output[0], self->output[1], n_samples, self->output_gain);
+
+		if (self->output_gain != 1.0) {
+			unsigned int s;
+			for (s = 0; s < n_samples; ++s) {
+				self->output_gain += .008f * (self->output_gain_target - self->output_gain);
+				self->output[0][s] = self->output[0][s] * self->output_gain;
+				self->output[1][s] = self->output[1][s] * self->output_gain;
+			}
+		}
 	} else {
 		assert (self->chn_in == 1);
 		assert (self->chn_out == 1);
 		self->clv_online->run (self->output[0], n_samples, self->output_gain);
+		if (self->output_gain != 1.0) {
+			unsigned int s;
+			for (s = 0; s < n_samples; ++s) {
+				self->output_gain += .008f * (self->output_gain_target - self->output_gain);
+				self->output[0][s] = self->output[0][s] * self->output_gain;
+			}
+		}
 	}
 
 
@@ -506,13 +550,14 @@ work (LV2_Handle                  instance,
                 /* DEBUG_printf("load IR %s\n", path); */
                 bool ok = false;
                 ZeroConvoLV2::Convolver::IRSettings irs;
+				irs.gain = 0.03f;
 
                 lv2_log_note (&self->logger, "ZConvolv State: ir=%s\n", path);
                 /* char* path = map_path->absolute_path (map_path->handle, (const char*)value); */
                 /* lv2_log_note (&self->logger, "ZConvolv State: ir=%s\n", path); */
                 try {
                     self->clv_offline = new ZeroConvoLV2::Convolver (path, self->rate, self->rt_policy, self->rt_priority, self->chn_cfg, irs);
-                    self->clv_offline->reconfigure (self->block_size);
+                    self->clv_offline->reconfigure (self->block_size, self->is_cab);
                     ok = self->clv_offline->ready ();
                 } catch (std::runtime_error& err) {
                     lv2_log_warning (&self->logger, "ZConvolv Convolver: %s.\n", err.what ());
@@ -677,7 +722,7 @@ restore (LV2_Handle                  instance,
 		lv2_log_note (&self->logger, "ZConvolv State: ir=%s\n", path);
 		try {
 			self->clv_offline = new ZeroConvoLV2::Convolver (path, self->rate, self->rt_policy, self->rt_priority, self->chn_cfg, irs);
-			self->clv_offline->reconfigure (self->block_size);
+			self->clv_offline->reconfigure (self->block_size, self->is_cab);
 			ok = self->clv_offline->ready ();
 		} catch (std::runtime_error& err) {
 			lv2_log_warning (&self->logger, "ZConvolv Convolver: %s.\n", err.what ());
@@ -721,7 +766,7 @@ opts_set (LV2_Handle instance, const LV2_Options_Option* options)
 
 	self->block_size = *((int32_t*)options->value);
 	if (self->clv_online) {
-		self->clv_online->reconfigure (self->block_size);
+		self->clv_online->reconfigure (self->block_size, self->is_cab);
 	}
 	return LV2_OPTIONS_SUCCESS;
 }
@@ -773,6 +818,36 @@ static const LV2_Descriptor descriptor2 = {
     cleanup,
     extension_data};
 
+static const LV2_Descriptor descriptor3 = {
+    ZC_PREFIX "CabMono",
+    instantiate,
+    connect_port,
+    activate,
+    run,
+    NULL, // deactivate,
+    cleanup,
+    extension_data};
+
+static const LV2_Descriptor descriptor4 = {
+    ZC_PREFIX "CabStereo",
+    instantiate,
+    connect_port,
+    activate,
+    run,
+    NULL, // deactivate,
+    cleanup,
+    extension_data};
+
+static const LV2_Descriptor descriptor5 = {
+    ZC_PREFIX "CabMonoToStereo",
+    instantiate,
+    connect_port,
+    activate,
+    run,
+    NULL, // deactivate,
+    cleanup,
+    extension_data};
+
 #undef LV2_SYMBOL_EXPORT
 #ifdef _WIN32
 # define LV2_SYMBOL_EXPORT __declspec(dllexport)
@@ -790,6 +865,12 @@ lv2_descriptor (uint32_t index)
 			return &descriptor1;
 		case 2:
 			return &descriptor2;
+		case 3:
+			return &descriptor3;
+		case 4:
+			return &descriptor4;
+		case 5:
+			return &descriptor5;
 		default:
 			return NULL;
 	}
